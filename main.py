@@ -69,6 +69,18 @@ def login_and_reserve(users, usernames, passwords, action, success_list=None):
 
 
 def main(users, action=False):
+    # --- 新增：精准定时等待逻辑 ---
+    if action:
+        import datetime
+        logging.info("GitHub Action 模式已启动，正在等待北京时间 20:00:00...")
+        while True:
+            # 获取当前北京时间
+            now = datetime.datetime.utcnow() + datetime.timedelta(hours=8)
+            # 到达 20:00:00 立即跳出循环
+            if now.hour >= 20:
+                logging.info(f"到达预定时间: {now.strftime('%H:%M:%S')}，开始抢座！")
+                break
+            time.sleep(0.1) # 0.1秒检查一次，减少CPU占用
     current_time = get_current_time(action)
     logging.info(f"start time {current_time}, action {'on' if action else 'off'}")
     attempt_times = 0
