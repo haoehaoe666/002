@@ -231,32 +231,6 @@ class reserve:
         tl = max_loc
         return tl[0]
 
-# === 修正后的 submit 循环 ===
-    def submit(self, times, roomid, seatid, action):
-        for seat in seatid:
-            suc = False
-            while not suc and self.max_attempt > 0:  # 修正了 ~suc 的逻辑
-                token, value = self._get_page_token(
-                    self.url.format(roomid, seat), require_value=True
-                )
-                logging.info(f"Get token: {token}")
-                captcha = self.resolve_captcha() if self.enable_slider else ""
-                logging.info(f"Captcha token {captcha}")
-                suc = self.get_submit(
-                    self.submit_url,
-                    times=times,
-                    token=token,
-                    roomid=roomid,
-                    seatid=seat,
-                    captcha=captcha,
-                    action=action,
-                    value=value,
-                )
-                if suc:
-                    return suc
-                time.sleep(self.sleep_time)
-                self.max_attempt -= 1
-        return suc
 
 # ... 前面的代码保持不变 ...
 
