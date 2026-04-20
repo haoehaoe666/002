@@ -290,3 +290,48 @@ class reserve:
         )
         logging.info(json.loads(html))
         return json.loads(html)["success"]
+        
+def pre_heat(self, times, roomid, seatid, action):
+        """预热函数：提前拿验证码，生成完整的参数包，蓄势待发"""
+        # 如果传入的是列表，预热首选座位
+        seat = seatid[0] if isinstance(seatid, list) else seatid
+        logging.info(f"开始预热首选座位: {seat}")
+        token, value = self._get_page_token(
+            self.url.format(roomid, seat), require_value=True
+        )
+        logging.info(f"获取预热 Token: {token}")
+        captcha = self.resolve_captcha() if self.enable_slider else ""
+        logging.info(f"获取预热验证码校验值: {captcha}")
+
+        delta_day = 1 if self.reserve_next_day else 0
+        day = datetime.date.today() + datetime.timedelta(days=0 + delta_day)
+        if action:
+            day = datetime.date.today() + datetime.timedelta(days=1 + delta_day)
+
+        parm = {
+            "roomId": roomid,
+            "startTime": times[0],
+            "endTime": times[1],
+            "day": str(day),
+            "seatNum": seat,
+            "captcha": captcha,
+            "token": token,
+            "type": "1",
+            "verifyData": "1",
+        }
+        # 提前计算好加密 enc，省去 20:00:00 时的算力消耗
+        parm["enc"] = verify_param(parm, value)
+        return parm, seat
+
+    def fire(self, parm, times):
+        """准点开火：瞬间把存在内存里的预热包砸向服务器"""
+        logging.info("开火！瞬间提交预热包...")
+        html = self.requests.post(url=self.submit_url, params=parm, verify=True).content.decode("utf-8")
+        try:
+            result = json.loads(html)
+            self.submit_msg.append(times[0] + "~" + times[1] + ":  " + str(result))
+            logging.info(result)
+            return result.get("success", False)
+        except Exception as e:
+            logging.error(f"解析返回值失败: {e}")
+            return False
