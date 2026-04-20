@@ -231,10 +231,11 @@ class reserve:
         tl = max_loc
         return tl[0]
 
+# === 修正后的 submit 循环 ===
     def submit(self, times, roomid, seatid, action):
         for seat in seatid:
             suc = False
-            while ~suc and self.max_attempt > 0:
+            while not suc and self.max_attempt > 0:  # 修正了 ~suc 的逻辑
                 token, value = self._get_page_token(
                     self.url.format(roomid, seat), require_value=True
                 )
@@ -257,81 +258,48 @@ class reserve:
                 self.max_attempt -= 1
         return suc
 
-    def get_submit(
-        self, url, times, token, roomid, seatid, captcha="", action=False, value=""
-    ):
+    # === 下面这两个函数必须有缩进，确保在 class 内部 ===
+    def pre_heat(self, times, roomid, seatid, action):
+        """预热函数：提前拿验证码，生成完整的参数包，蓄势待发"""
+        seat = seatid[0] if isinstance(seatid, list) else seatid
+        logging.info(f"开始预热首选座位: {seat}")
+        token, value = self._get_page_token(
+            self.url.format(roomid, seat), require_value=True
+        )
+        if not token:
+            logging.error("预热阶段获取 Token 失败")
+            return None, seat
+            
+        captcha = self.resolve_captcha() if self.enable_slider else ""
+        
         delta_day = 1 if self.reserve_next_day else 0
-        day = datetime.date.today() + datetime.timedelta(
-            days=0 + delta_day
-        )  # 预约今天，修改days=1表示预约明天
+        day = datetime.date.today() + datetime.timedelta(days=0 + delta_day)
+        # 处理 Action 时区（如果是在 GitHub Action 运行且没到第二天）
         if action:
-            day = datetime.date.today() + datetime.timedelta(
-                days=1 + delta_day
-            )  # 由于action时区问题导致其早+8区一天
+            day = datetime.date.today() + datetime.timedelta(days=1 + delta_day)
+
         parm = {
             "roomId": roomid,
             "startTime": times[0],
             "endTime": times[1],
             "day": str(day),
-            "seatNum": seatid,
+            "seatNum": seat,
             "captcha": captcha,
             "token": token,
             "type": "1",
             "verifyData": "1",
         }
-        logging.info(f"submit parameter {parm} ")
-        # parm["enc"] = enc(parm)
         parm["enc"] = verify_param(parm, value)
-        html = self.requests.post(url=url, params=parm, verify=True).content.decode(
-            "utf-8"
-        )
-        self.submit_msg.append(
-            times[0] + "~" + times[1] + ":  " + str(json.loads(html))
-        )
-        logging.info(json.loads(html))
-        return json.loads(html)["success"]
-        
-def pre_heat(self, times, roomid, seatid, action):
-        """预热函数：提前拿验证码，生成完整的参数包，蓄势待发"""
-        # 如果传入的是列表，预热首选座位
-        seat = seatid[0] if isinstance(seatid, list) else seatid
-        logging.info(f"开始预热首选座位: {seat}")
-        token, value = self._get_page_token(
-            self.url.format(roomid, seat), require_value=True
-        )
-        logging.info(f"获取预热 Token: {token}")
-        captcha = self.resolve_captcha() if self.enable_slider else ""
-        logging.info(f"获取预热验证码校验值: {captcha}")
+        return parm, seat
 
-        delta_day = 1 if self.reserve_next_day else 0
-        day = datetime.date.today() + datetime.timedelta(days=0 + delta_day)
-        if action:
-            day = datetime.date.today() + datetime.timedelta(days=1 + delta_day)
-
-        parm = {
-            "roomId": roomid,
-            "startTime": times[0],
-            "endTime": times[1],
-            "day": str(day),
-            "seatNum": seat,
-            "captcha": captcha,
-            "token": token,
-            "type": "1",
-            "verifyData": "1",
-        }
-        # 提前计算好加密 enc，省去 20:00:00 时的算力消耗
-        parm["enc"] = verify_param(parm, value)
-        return parm, seat
-
-    def fire(self, parm, times):
-        """准点开火：瞬间把存在内存里的预热包砸向服务器"""
-        logging.info("开火！瞬间提交预热包...")
-        html = self.requests.post(url=self.submit_url, params=parm, verify=True).content.decode("utf-8")
-        try:
-            result = json.loads(html)
-            self.submit_msg.append(times[0] + "~" + times[1] + ":  " + str(result))
-            logging.info(result)
-            return result.get("success", False)
-        except Exception as e:
-            logging.error(f"解析返回值失败: {e}")
-            return False
+    def fire(self, parm, times):
+        """准点开火：瞬间提交"""
+        try:
+            html = self.requests.post(url=self.submit_url, params=parm, verify=True, timeout=5).content.decode("utf-8")
+            result = json.loads(html)
+            self.submit_msg.append(times[0] + "~" + times[1] + ":  " + str(result))
+            logging.info(f"开火结果: {result}")
+            return result.get("success", False)
+        except Exception as e:
+            logging.error(f"开火请求失败: {e}")
+            return False
