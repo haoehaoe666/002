@@ -258,9 +258,78 @@ class reserve:
                 self.max_attempt -= 1
         return suc
 
-    # === 下面这两个函数必须有缩进，确保在 class 内部 ===
+# ... 前面的代码保持不变 ...
+
+    def submit(self, times, roomid, seatid, action):
+        """常规预约逻辑（非秒杀模式下使用）"""
+        # 兼容处理：确保 seatid 是列表
+        seats = seatid if isinstance(seatid, list) else [seatid]
+        
+        for seat in seats:
+            suc = False
+            attempt = self.max_attempt
+            while not suc and attempt > 0:
+                token, value = self._get_page_token(
+                    self.url.format(roomid, seat), require_value=True
+                )
+                logging.info(f"Get token: {token}")
+                captcha = self.resolve_captcha() if self.enable_slider else ""
+                
+                # 调用下面定义的 get_submit
+                suc = self.get_submit(
+                    self.submit_url,
+                    times=times,
+                    token=token,
+                    roomid=roomid,
+                    seatid=seat,
+                    captcha=captcha,
+                    action=action,
+                    value=value,
+                )
+                if suc:
+                    return True
+                
+                time.sleep(self.sleep_time)
+                attempt -= 1
+        return False
+
+    def get_submit(self, url, times, token, roomid, seatid, captcha="", action=False, value=""):
+        """底层的发送请求函数"""
+        delta_day = 1 if self.reserve_next_day else 0
+        day = datetime.date.today() + datetime.timedelta(days=0 + delta_day)
+        
+        # 处理 Action 时区问题
+        if action:
+            day = datetime.date.today() + datetime.timedelta(days=1 + delta_day)
+            
+        parm = {
+            "roomId": roomid,
+            "startTime": times[0],
+            "endTime": times[1],
+            "day": str(day),
+            "seatNum": seatid,
+            "captcha": captcha,
+            "token": token,
+            "type": "1",
+            "verifyData": "1",
+        }
+        
+        # 生成加密签名
+        parm["enc"] = verify_param(parm, value)
+        
+        try:
+            response = self.requests.post(url=url, params=parm, verify=True, timeout=5)
+            html = response.content.decode("utf-8")
+            result = json.loads(html)
+            self.submit_msg.append(f"{times[0]}~{times[1]}: {result}")
+            logging.info(f"提交结果: {result}")
+            return result.get("success", False)
+        except Exception as e:
+            logging.error(f"提交请求异常: {e}")
+            return False
+
     def pre_heat(self, times, roomid, seatid, action):
-        """预热函数：提前拿验证码，生成完整的参数包，蓄势待发"""
+        """预热函数：提前准备参数包"""
         seat = seatid[0] if isinstance(seatid, list) else seatid
         logging.info(f"开始预热首选座位: {seat}")
         token, value = self._get_page_token(
@@ -274,7 +343,6 @@ class reserve:
         
         delta_day = 1 if self.reserve_next_day else 0
         day = datetime.date.today() + datetime.timedelta(days=0 + delta_day)
-        # 处理 Action 时区（如果是在 GitHub Action 运行且没到第二天）
         if action:
             day = datetime.date.today() + datetime.timedelta(days=1 + delta_day)
 
@@ -295,11 +363,12 @@ class reserve:
     def fire(self, parm, times):
         """准点开火：瞬间提交"""
         try:
-            html = self.requests.post(url=self.submit_url, params=parm, verify=True, timeout=5).content.decode("utf-8")
-            result = json.loads(html)
-            self.submit_msg.append(times[0] + "~" + times[1] + ":  " + str(result))
-            logging.info(f"开火结果: {result}")
+            # 这里的逻辑和 get_submit 的核心部分一致，但直接用预热好的参数
+            response = self.requests.post(url=self.submit_url, params=parm, verify=True, timeout=5)
+            result = json.loads(response.content.decode("utf-8"))
+            self.submit_msg.append(f"{times[0]}~{times[1]}: {result}")
+            logging.info(f"火速提交结果: {result}")
             return result.get("success", False)
         except Exception as e:
-            logging.error(f"开火请求失败: {e}")
+            logging.error(f"开火失败: {e}")
             return False
