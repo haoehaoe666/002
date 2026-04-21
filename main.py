@@ -108,12 +108,29 @@ def main(users, action=False):
                         data["parm"], _ = data["session"].pre_heat(data["times"], data["roomid"], data["seatid"], action)
                 preheated = True
                 logging.info("验证码已预解，子弹上膛...")
-            # 20:00:00 准时开火
+            # 20:00:00 准时开火 (修改为 5 次 0.1 秒连发)
             if now.hour >= 20:
-                for idx, data in enumerate(sessions):
-                    if data and data["parm"] and not success_list[idx]:
-                        success_list[idx] = data["session"].fire(data["parm"], data["times"])
-                break
+                logging.info("时间到，开启 0.1s 高频连发模式！")
+                for i in range(5):  # 连发 5 次
+                    logging.info(f"--- 正在进行第 {i+1} 轮连发 ---")
+                    all_success = True
+                    
+                    for idx, data in enumerate(sessions):
+                        # 如果该账号配置有效，且还没抢到
+                        if data and data["parm"] and not success_list[idx]:
+                            success_list[idx] = data["session"].fire(data["parm"], data["times"])
+                        
+                        # 检查是否所有账号都抢到了
+                        if data and not success_list[idx]:
+                            all_success = False
+                            
+                    if all_success:
+                        logging.info("所有账号均在连发阶段秒杀成功！")
+                        break  # 如果都抢到了，提前结束连发
+                        
+                    time.sleep(0.1)  # 连发间隔 0.1 秒
+                    
+                break  # 5 次连发打完，跳出预热等待循环，进入下方的常规重试兜底
             time.sleep(0.01)
 
     # --- 阶段二：常规重试 (兜底) ---
