@@ -128,7 +128,7 @@ def main(users, action=False):
                         logging.info("所有账号均在连发阶段秒杀成功！")
                         break  # 如果都抢到了，提前结束连发
                         
-                    time.sleep(0.1)  # 连发间隔 0.1 秒
+                    time.sleep(0.5)  # 连发间隔 0.1 秒
                     
                 break  # 5 次连发打完，跳出预热等待循环，进入下方的常规重试兜底
             time.sleep(0.01)
